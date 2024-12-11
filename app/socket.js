@@ -4,8 +4,10 @@ import pino from "pino";
 import path from "path";
 import { STORAGE_SESSION,SESSION_NAME } from "../config.js";
 import { Log } from "../helper/logger.js";
+import event from "./event/index.js";
 
-const startSocket = async () => 
+
+export const startSocket = async () => 
 {
     let retryCount = 0;
     const msgRetryCounterCache = new NodeCache();
@@ -20,33 +22,14 @@ const startSocket = async () =>
             })),
         },
         logger: pino({ level: "silent" }),
-        browser: ['VelixS', 'Safari', '3.0'],
+        browser: ['Kus', 'Safari', '3.0'],
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
-        patchMessageBeforeSending: (message) => {
-            const requiresPatch = !!(
-                message.buttonsMessage 
-                || message.templateMessage
-                || message.listMessage
-            );
-            if (requiresPatch) {
-                message = {
-                    viewOnceMessage: {
-                        message: {
-                            messageContextInfo: {
-                                deviceListMetadataVersion: 2,
-                                deviceListMetadata: {},
-                            },
-                            ...message,
-                        },
-                    },
-                };
-            }
-            return message;
-        }, 
         msgRetryCounterCache,
         defaultQueryTimeoutMs: undefined,
     });
+
+    event(sock);
 
     try {
         sock.ev.on('connection.update', (update) => {
@@ -87,4 +70,3 @@ const startSocket = async () =>
         Log.error("SOCKET : " + e)
     }
 }
-startSocket()

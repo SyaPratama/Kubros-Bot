@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -14,9 +15,11 @@
     "nodemon": "^3.1.7"
   },
   "dependencies": {
+    "@hapi/boom": "^10.0.1",
     "@ptkdev/logger": "^1.8.0",
     "@whiskeysockets/baileys": "^6.7.9",
     "node-cache": "^5.1.2",
-    "pino": "^9.5.0"
+    "pino": "^9.5.0",
+    "qrcode-terminal": "^0.12.0"
   }
 }
