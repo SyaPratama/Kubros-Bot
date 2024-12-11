@@ -4,14 +4,21 @@ import pino from "pino";
 import path from "path";
 import { STORAGE_SESSION,SESSION_NAME } from "../config.js";
 import { Log } from "../helper/logger.js";
+import event from "./event/index.js";
+import readline from "readline";
 
-const startSocket = async () => 
-{
+
+
+export const startSocket = async () => 
+    {
+    const rl = readline.createInterface({input: process.stdin, output: process.stdout});
+    const usePairingCode = process.argv.includes('--use-pairing-code');
+    const question = (text) => { return new Promise(resolve => {rl.question(text,resolve)})};
     let retryCount = 0;
     const msgRetryCounterCache = new NodeCache();
     const { state, saveCreds } = await useMultiFileAuthState(path.join(STORAGE_SESSION,SESSION_NAME));
     const sock = makeWASocket({
-        printQRInTerminal: true,
+        printQRInTerminal: usePairingCode,
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino().child({ 
@@ -20,33 +27,22 @@ const startSocket = async () =>
             })),
         },
         logger: pino({ level: "silent" }),
-        browser: ['VelixS', 'Safari', '3.0'],
+        browser: ['Kus', 'Safari', '3.0'],
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
-        patchMessageBeforeSending: (message) => {
-            const requiresPatch = !!(
-                message.buttonsMessage 
-                || message.templateMessage
-                || message.listMessage
-            );
-            if (requiresPatch) {
-                message = {
-                    viewOnceMessage: {
-                        message: {
-                            messageContextInfo: {
-                                deviceListMetadataVersion: 2,
-                                deviceListMetadata: {},
-                            },
-                            ...message,
-                        },
-                    },
-                };
-            }
-            return message;
-        }, 
         msgRetryCounterCache,
         defaultQueryTimeoutMs: undefined,
     });
+
+    if(!usePairingCode && !sock.authState.creds.registered)
+    {
+        const phoneNumber = await question("Masukan Nomor Hp Mu:\n");
+        console.log(phoneNumber);
+        const code = await sock.requestPairingCode(phoneNumber);
+        Log.info(`Pairing Code : ${code}`);
+    }
+
+    event(sock);
 
     try {
         sock.ev.on('connection.update', (update) => {
@@ -87,4 +83,3 @@ const startSocket = async () =>
         Log.error("SOCKET : " + e)
     }
 }
-startSocket()
