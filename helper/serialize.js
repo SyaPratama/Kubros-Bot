@@ -1,22 +1,260 @@
-import { proto,downloadContentFromMessage,getContentType,extractMessageContent,jidNormalizedUser,delay } from "@whiskeysockets/baileys";
+import {
+  downloadContentFromMessage,
+  getContentType,
+  extractMessageContent,
+  jidNormalizedUser,
+  delay,
+} from "@whiskeysockets/baileys";
+import { createRequire } from "module";
 import { Boom } from "@hapi/boom";
-// let M = proto.WebMessageInfo;
+import { DB as db } from "./database.js";
+import path from "path";
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const require = createRequire(path.join(__filename,'../'));
+const { proto } = require('@whiskeysockets/baileys');
+let M = proto.WebMessageInfo;
 
-export const serialize = (sock,m) => {
-    if(!m) return m;
-    if(m.key)
-    {
-        m.id = m.key.id;
-        m.isBaileys = m.id.startsWith('BAE5') && m.id.length === 16;
-        m.chat = m.key.remoteJid;
-        m.fromMe = m.key.fromMe;
-        m.isGroup = m.chat.endsWith("@g.us");
-        m.botNumber = m.chat.endsWith(sock.user?.id);
-        m.sender = jidNormalizedUser(m.fromMe ? sock.user.id : m.participant ? m.participant : m.key.participant ? m.key.participant : m.chat);
+export const serialize = (sock, m) => {
+  if (!m) return m;
+  if (m.key) {
+    m.id = m.key.id;
+    m.isBaileys = m.id.startsWith("BAE5") && m.id.length === 16;
+    m.chat = m.key.remoteJid;
+    m.fromMe = m.key.fromMe;
+    m.isGroup = m.chat.endsWith("@g.us");
+    m.botNumber = m.chat.endsWith(sock.user?.id);
+    m.sender = jidNormalizedUser(
+      m.fromMe
+        ? sock.user.id
+        : m.participant
+        ? m.participant
+        : m.key.participant
+        ? m.key.participant
+        : m.chat
+    );
+  }
+  if (m.message) {
+    m.message = extractMessageContent(m.message);
+    m.mtype = getContentType(m.message);
+    m.msg =
+      m.mtype === "viewOnceMessage"
+        ? m.message[m.mtype].message[getContentType(m.message[m.mtype].message)]
+        : m.message[m.mtype];
+    m.ephemeral = m.msg?.contextInfo?.expiration || false;
+
+    m.text = extractText(m);
+    m.mentionedJid = m.msg?.contextInfo ? m.msg.contextInfo.mentionedJid : [];
+
+    m.quoted = m.msg?.contextInfo ? m.msg.contextInfo.quotedMessage : null;
+    if (m.quoted) {
+      m.quoted = extractQuotedMessage(sock, m);
     }
-    if(m.message)
-    {
-        m.message = extractMessageContent(m.message);
-        m.mtype = getContentType(m.message);
+  }
+
+  m.db = {
+    user: null,
+    group: null,
+    bot: db.bot.get("settings"),
+  };
+  m.senderIsOwner = Object.keys(m.db.bot.owners).includes(
+    m.sender.split("@")[0]
+  )
+    ? true
+    : false;
+
+  m.body = {
+    prefix: m.db.bot.prefix.find((v) => m.text.startsWith(v)) || null,
+    full: m.text.trim(),
+    command: m.text.split(" ")[0].trim(),
+    commandWithoutPrefix: m.text
+      .split(" ")[0]
+      .replace(new RegExp(`^[${m.db.bot.prefix.join("")}]`), ""),
+    arg: m.text.slice(m.text.split(" ")[0].length).trim(),
+  };
+
+  m.download = () => downloadMedia(m);
+  m.saveMedia = (filePath) => saveMedia(m, filePath);
+
+  m.copy = () => serialize(sock, M.fromObject(M.toObject(m)));
+  m.copyNForward = (Jid = m.chat, forceForward = false, options = {}) =>
+    sock.copyNForward(Jid, m, forceForward, options);
+  m = messageWrapper(sock, m);
+  return m;
+};
+
+const extractText = (m) => {
+  let text = "";
+  if (m.message?.conversation) text = m.message.conversation;
+  else if (m.message?.[m.mtype]?.text) text = m.message?.[m.mtype]?.text;
+  else if (m.message?.[m.mtype]?.caption) text = m.message?.[m.mtype]?.caption;
+  else if (m.message?.[m.mtype]?.contextInfo)
+    text = m.message?.[m.mtype]?.contextInfo;
+  else if (m.message?.[m.mtype]?.selectedDisplayText)
+    text = m.message?.[m.mtype]?.selectedDisplayText;
+  else if (m.message?.[m.mtype]?.title) text = m.message?.[m.mtype]?.title;
+  else if (
+    JSON.parse(
+      m.message?.[m.mtype]?.nativeFlowResponseMessage?.paramsJson || "{}"
+    )?.id
+  )
+    text =
+      JSON.parse(
+        m.message?.[m.mtype]?.nativeFlowResponseMessage?.paramsJson || "{}"
+      )?.id || "";
+  return text;
+};
+
+const messageWrapper = (sock, m) => {
+  m._reply = async (text) => {
+    await sock.presenceSubscribe(m.chat);
+    await delay(500);
+    await sock.sendPresenceUpdate("composing", m.chat);
+    await delay(500);
+    await sock.sendPresenceUpdate("pause", m.chat);
+
+    return await sock.sendMessage(
+      m.chat,
+      typeof text === "string" ? { text: text } : text,
+      { quoted: m, ephemeralExpiration: m.ephemeral }
+    );
+  };
+
+  m._sendMessage = async (jid, content, options) => {
+    await sock.presenceSubscribe(jid);
+    await delay(500);
+    await sock.sendPresenceUpdate("composing", jid);
+    await delay(500);
+    await sock.sendPresenceUpdate("pause", jid);
+
+    if(m.ephemeral) options = { ...options, ...{ ephemeralExpiration: m.ephemeral }};
+    return await sock.sendMessage(jid,content,options);
+  };
+
+  m._react = async (key,emoji) => 
+  {
+    return await sock.sendMessage(m.chat,{ react: { text: emoji ,key } }, { quoted: m });
+  }
+
+  return m;
+};
+
+const extractQuotedMessage = (sock, m) => {
+    if (m.quoted?.ephemeralMessage) m.quoted = m.quoted.ephemeralMessage.message;
+    if (m.quoted?.viewOnceMessageV2Extension) m.quoted = m.quoted.viewOnceMessageV2Extension.message;
+    if (m.quoted?.viewOnceMessageV2) m.quoted = m.quoted.viewOnceMessageV2.message;
+    if (m.quoted?.documentWithCaptionMessage) m.quoted = m.quoted.documentWithCaptionMessage.message;
+    
+    let type = getContentType(m.quoted);
+    
+
+    m.quoted = m.quoted[type];
+    if (['productMessage'].includes(type)) {
+        type = getContentType(m.quoted);
+        m.quoted = m.quoted[type];
     }
+    if (typeof m.quoted === 'string') m.quoted = { text: m.quoted };
+    m.quoted.mtype = type;
+    m.quoted.id = m.msg.contextInfo.stanzaId;
+    m.quoted.chat = m.msg.contextInfo.remoteJid || m.chat;
+    m.quoted.isBaileys = m.quoted.id ? m.quoted.id.startsWith('BAE5') && m.quoted.id.length === 16 : false;
+    m.quoted.sender = jidNormalizedUser(m.msg.contextInfo.participant);
+    m.quoted.fromMe = m.quoted.sender === (sock.user && sock.user.id);
+    m.quoted.key = {
+        id:  m.quoted.id,
+        fromMe: m.quoted.fromMe,
+        remoteJid: m.chat,
+        ...(m.isGroup ? { participant: m.msg.contextInfo?.participant } : {}),
+    };
+    m.quoted.text = m.quoted.text || m.quoted.caption || m.quoted.conversation || m.quoted.contentText || m.quoted.selectedDisplayText || m.quoted.title || '';
+    m.quoted.mentionedJid = m.msg.contextInfo ? m.msg.contextInfo.mentionedJid : [];
+    m.quoted.ephemeral = m.quoted?.contextInfo?.expiration || false;
+    m.quoted.download = () => downloadMedia(m, true);
+    m.quoted.saveMedia = (filePath) => saveMedia(m, filePath, true);
+    return m.quoted;
+}
+
+const downloadMedia = async (m, quoted = false) => {
+    let messageType = mediaTypes.find(v => (quoted ? m.quoted.mtype : m.mtype) == v);
+    
+    if (!messageType) {
+        throw new Error('No media found in the message');
+    }
+    
+    const mediaKey = quoted ? m.quoted.mediaKey : m.message[messageType].mediaKey;
+    if (!mediaKey) {
+        throw new Error('Media key is missing');
+    }
+    
+    try {
+        const stream = await downloadContentFromMessage({
+            mediaKey : quoted ? m.quoted.mediaKey : m.message[messageType].mediaKey,
+            directPath : quoted ? m.quoted.directPath : m.message[messageType].directPath,
+            url : quoted ? m.quoted.url : m.message[messageType].url,
+        }, messageType.replace('Message', ''));
+        
+        let buffer = Buffer.from([]);
+        for await (const chunk of stream) {
+            buffer = Buffer.concat([buffer, chunk]);
+        }
+        return {
+            buffer,
+            mtype: quoted ? m.quoted.mtype : m.mtype,
+            mediaType: messageType
+        };
+    } catch (error) {
+        if (error instanceof Boom && error.output.statusCode === 404) {
+            throw new Error('Media not found. It might have been deleted or it\'s not accessible.');
+        }
+        throw error;
+    }
+}
+
+export const saveMedia = async (m, customPath = '', quoted = false) => {
+    try {
+        const media = await downloadMedia(m, quoted);
+        
+        const mtype = quoted ? m.quoted.mtype : m.mtype;
+        const mediaTypes = {
+            'imageMessage': '.jpg',
+            'videoMessage': '.mp4',
+            'audioMessage': '.mp3',
+            'stickerMessage': '.webp',
+            'documentMessage': ''  // We'll use the original file extension for documents
+        };
+        
+        let fileName = `${Date.now()}`;
+        let fileExt = mediaTypes[mtype] || '';
+        
+        if (mtype === 'documentMessage') {
+            let documentName = quoted ? m.quoted?.fileName : m.message.documentMessage.fileName;
+            const originalExt = path.extname(documentName);
+            fileExt = originalExt || '.bin';  // Use .bin if no extension is found
+            fileName = path.basename(documentName || fileName, originalExt);
+        }
+        
+        const filePath = path.join(customPath || 'media', `${fileName}${fileExt}`);
+        
+        await writeFile(filePath, media.buffer);
+        return filePath;
+    } catch (error) {
+        throw error;
+    }
+}
+
+export const updateAdminStatus = async (conn, m) => {
+    if (m.isGroup) {
+        const groupMetadata = await conn.groupMetadata(m.chat);
+        const participants = groupMetadata.participants;
+        m.isGroup = {
+            groupMetadata: groupMetadata,
+            botIsAdmin: participants.some(p => p.id === m.botNumber && (p.admin === 'admin' || p.admin === 'superadmin')),
+            senderIsSuperAdmin: participants.some(p => p.id === m.sender && p.admin === 'superadmin'),
+            senderIsAdmin: participants.some(p => p.id === m.sender && (p.admin === 'admin' || p.admin === 'superadmin'))
+        }
+    }
+}
+
+export const isMedia = (type) => {
+    return mediaTypes.includes(type)
 }

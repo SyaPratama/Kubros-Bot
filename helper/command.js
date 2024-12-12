@@ -20,9 +20,10 @@ const LoadFile = async (filepath) => {
             const URLFile = pathToFileURL(path.resolve(filepath));
             const file = await import(URLFile);
             const name = file.default.name.toLowerCase().replace(/\s/g,"");
+            console.log(file.default);
             if(!commands.has(name))
             {
-                commands.set(name,file);
+                commands.set(name,file.default);
             } else {
                 Log.error(`Duplication Name ${name}`);
             }
@@ -64,5 +65,6 @@ export const loadCommand = async () => {
             })
         }
     });
+    console.log(commands);
     Log.info(`Loaded ${commands.size} Commands`);
 }
