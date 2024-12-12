@@ -8,6 +8,7 @@ export const SESSION_NAME = "Kus";
 export const STORAGE_PATH = `${__dirname}/storage`;
 export const STORAGE_SESSION =  `${__dirname}/storage/session`;
 export const STORAGE_DATABASE = `${__dirname}/storage/databases`;
+export const STORAGE_MEMORY = `${__dirname}/storage/memory`;
 export const DATABASE_SCHEMA = {
     bot: {
         mode: 'public',

@@ -63,15 +63,13 @@ export const serialize = (sock, m) => {
     ? true
     : false;
 
-  m.body = {
-    prefix: m.db.bot.prefix.find((v) => m.text.startsWith(v)) || null,
-    full: m.text.trim(),
-    command: m.text.split(" ")[0].trim(),
-    commandWithoutPrefix: m.text
-      .split(" ")[0]
-      .replace(new RegExp(`^[${m.db.bot.prefix.join("")}]`), ""),
-    arg: m.text.slice(m.text.split(" ")[0].length).trim(),
-  };
+    m.body = {
+        prefix : m.db.bot.prefix.find(v => m.text.startsWith(v)) || null,
+        full : m.text.trim(),
+        command : m.text.split(' ')[0].trim(),
+        commandWithoutPrefix : m.text.split(' ')[0].replace(new RegExp(`^[${m.db.bot.prefix.join('')}]`), ''),
+        arg : m.text.slice(m.text.split(' ')[0].length).trim(),
+    }
 
   m.download = () => downloadMedia(m);
   m.saveMedia = (filePath) => saveMedia(m, filePath);
@@ -84,26 +82,16 @@ export const serialize = (sock, m) => {
 };
 
 const extractText = (m) => {
-  let text = "";
-  if (m.message?.conversation) text = m.message.conversation;
-  else if (m.message?.[m.mtype]?.text) text = m.message?.[m.mtype]?.text;
-  else if (m.message?.[m.mtype]?.caption) text = m.message?.[m.mtype]?.caption;
-  else if (m.message?.[m.mtype]?.contextInfo)
-    text = m.message?.[m.mtype]?.contextInfo;
-  else if (m.message?.[m.mtype]?.selectedDisplayText)
-    text = m.message?.[m.mtype]?.selectedDisplayText;
-  else if (m.message?.[m.mtype]?.title) text = m.message?.[m.mtype]?.title;
-  else if (
-    JSON.parse(
-      m.message?.[m.mtype]?.nativeFlowResponseMessage?.paramsJson || "{}"
-    )?.id
-  )
-    text =
-      JSON.parse(
-        m.message?.[m.mtype]?.nativeFlowResponseMessage?.paramsJson || "{}"
-      )?.id || "";
-  return text;
-};
+    let text = "";
+    if (m.message?.conversation) text = m.message.conversation;
+    else if (m.message?.[m.mtype]?.text) text = m.message?.[m.mtype]?.text;
+    else if (m.message?.[m.mtype]?.caption) text = m.message?.[m.mtype]?.caption;
+    else if (m.message?.[m.mtype]?.contentText) text = m.message?.[m.mtype]?.contentText;
+    else if (m.message?.[m.mtype]?.selectedDisplayText) text = m.message?.[m.mtype]?.selectedDisplayText;
+    else if (m.message?.[m.mtype]?.title) text = m.message?.[m.mtype]?.title;
+    else if (JSON.parse(m.message?.[m.mtype]?.nativeFlowResponseMessage?.paramsJson || "{}")?.id) text = JSON.parse(m.message?.[m.mtype]?.nativeFlowResponseMessage?.paramsJson || "{}")?.id || '';
+    return text;
+}
 
 const messageWrapper = (sock, m) => {
   m._reply = async (text) => {

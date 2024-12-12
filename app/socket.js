@@ -1,3 +1,5 @@
+import { STORAGE_MEMORY } from "../config.js";
+
 (async () => {
   const {
     makeWASocket,
@@ -5,6 +7,7 @@
     useMultiFileAuthState,
     makeCacheableSignalKeyStore,
     PHONENUMBER_MCC,
+    makeInMemoryStore
   } = await import("@whiskeysockets/baileys");
   const NodeCache = await import("node-cache");
   const pino = await import("pino");
@@ -13,6 +16,12 @@
   const { Log } = await import("../helper/logger.js");
   const event = await import("./event/index.js");
   const readline = await import("readline");
+
+  const store = makeInMemoryStore({ Log });
+  store?.readFromFile(path.join(STORAGE_MEMORY,'/kus_store_multi.json'));
+  setInterval(() => {
+    store?.writeToFile(path.join(STORAGE_MEMORY,'/kus_store_multi.json'));
+  },10_000)
 
   const startSocket = async () => {
     const rl = readline.createInterface({
@@ -50,6 +59,7 @@
       defaultQueryTimeoutMs: undefined,
     });
 
+    store?.bind(sock.ev);
     if (usePairingCode && !sock.authState.creds.registered) {
       let phoneNumber = await question(
         "Masukan Nomor Hp Mu Contoh +628124534434 : \n"
