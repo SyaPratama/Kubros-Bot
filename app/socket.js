@@ -1,5 +1,4 @@
 import inquirer from "inquirer";
-import { STORAGE_MEMORY } from "../config.js";
 import { Browsers } from "@whiskeysockets/baileys";
 import fs from "fs/promises";
 
@@ -9,7 +8,6 @@ import fs from "fs/promises";
     DisconnectReason,
     useMultiFileAuthState,
     makeCacheableSignalKeyStore,
-    makeInMemoryStore
   } = await import("@whiskeysockets/baileys");
   const NodeCache = await import("node-cache");
   const pino = await import("pino");
@@ -17,16 +15,9 @@ import fs from "fs/promises";
   const { STORAGE_SESSION, SESSION_NAME } = await import("../config.js");
   const { Log } = await import("../helper/logger.js");
   const event = await import("./event/index.js");
-  const readline = await import("readline");
   let useCode = {
-    isTrue: true
-  }
-
-  const store = makeInMemoryStore({ Log });
-  store?.readFromFile(path.join(STORAGE_MEMORY,'/kus_store_multi.json'));
-  setInterval(() => {
-    store?.writeToFile(path.join(STORAGE_MEMORY,'/kus_store_multi.json'));
-  },10_000)
+    isTrue: true,
+  };
 
   const startSocket = async () => {
     let retryCount = 0;
@@ -54,31 +45,31 @@ import fs from "fs/promises";
       defaultQueryTimeoutMs: undefined,
     });
     if (useCode.isTrue && !sock.authState.creds.registered) {
-        useCode = await inquirer.prompt([
-          {
-            type:"confirm",
-            name:"isTrue",
-            message:"Apakah Anda Ingin Menggunakan Pairing Code?",
-            default: true,
-          }
-        ]);
-        if(useCode.isTrue)
+      useCode = await inquirer.prompt([
         {
-          const numWa = await inquirer.prompt([{
-            type:'input',
-            name:'res',
-            message: 'Nomor Whatsapp :',
-          }]);
-          
-          const code = await sock.requestPairingCode(numWa.res);
-          console.log(code);
-        } else {
-          useCode.isTrue = false;
-          startSocket();
-        }
+          type: "confirm",
+          name: "isTrue",
+          message: "Apakah Anda Ingin Menggunakan Pairing Code?",
+          default: true,
+        },
+      ]);
+      if (useCode.isTrue) {
+        const numWa = await inquirer.prompt([
+          {
+            type: "input",
+            name: "res",
+            message: "Nomor Whatsapp :",
+          },
+        ]);
+
+        const code = await sock.requestPairingCode(numWa.res);
+        console.log(code);
+      } else {
+        useCode.isTrue = false;
+        startSocket();
+      }
     }
 
-    store?.bind(sock.ev);
 
     await event.default(sock);
 
@@ -105,7 +96,7 @@ import fs from "fs/promises";
             retryCount = retryAttempt;
             startSocket();
           } else {
-            await fs.rm(path.join(STORAGE_SESSION,SESSION_NAME));
+            await fs.rm(path.join(STORAGE_SESSION, SESSION_NAME));
             Log.error(`SESSION : Disconnected.`);
             retryCount = 0;
             sock?.logout();

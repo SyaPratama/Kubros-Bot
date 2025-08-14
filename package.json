@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
+    "@open-wa/wa-automate": "^4.76.0",
     "@ptkdev/logger": "^1.8.0",
     "@whiskeysockets/baileys": "^6.7.9",
     "axios": "^1.7.9",
